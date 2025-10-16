@@ -1,0 +1,341 @@
+openapi: 3.0.3
+info:
+  title: Book Management API
+  description: API for managing books, members, and loans with JWT authentication and ETag support
+  version: 1.2.0
+
+servers:
+  - url: http://localhost:5001
+    description: Local development server
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/v1/login:
+    post:
+      summary: Login to obtain JWT token
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                  example: admin
+                password:
+                  type: string
+                  example: 123456
+      responses:
+        200:
+          description: Login successful, returns JWT token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      token:
+                        type: string
+                        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        401:
+          description: Invalid credentials
+
+  /api/v1/books:
+    get:
+      summary: Get all books with optional filtering and pagination
+      tags: [Books]
+      parameters:
+        - name: available
+          in: query
+          schema:
+            type: boolean
+          description: Filter books by availability
+        - name: title
+          in: query
+          schema:
+            type: string
+          description: Filter books by title
+        - name: author
+          in: query
+          schema:
+            type: string
+          description: Filter books by author
+        - name: limit
+          in: query
+          schema:
+            type: integer
+          description: Limit number of results
+        - name: offset
+          in: query
+          schema:
+            type: integer
+          description: Offset for pagination
+      responses:
+        200:
+          description: List of books retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      books:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Book"
+                      pagination:
+                        $ref: "#/components/schemas/Pagination"
+
+    post:
+      summary: Create a new book
+      tags: [Books]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewBook"
+      responses:
+        201:
+          description: Book created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Book"
+
+  /api/v1/books/{book_id}:
+    get:
+      summary: Get a book by ID
+      tags: [Books]
+      parameters:
+        - name: book_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: Book retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Book"
+        404:
+          description: Book not found
+
+    put:
+      summary: Update or borrow/return a book
+      tags: [Books]
+      parameters:
+        - name: book_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBook"
+      responses:
+        200:
+          description: Book updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Book"
+        400:
+          description: Invalid request
+
+    delete:
+      summary: Delete a book
+      tags: [Books]
+      parameters:
+        - name: book_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: Book deleted successfully
+        404:
+          description: Book not found
+
+  /api/v1/members:
+    get:
+      summary: Get members with optional name filter and pagination
+      tags: [Members]
+      parameters:
+        - name: name
+          in: query
+          schema:
+            type: string
+          description: Filter by member name
+        - name: limit
+          in: query
+          schema:
+            type: integer
+          description: Limit number of results
+        - name: offset
+          in: query
+          schema:
+            type: integer
+          description: Offset for pagination
+      responses:
+        200:
+          description: List of members retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      members:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Member"
+                      pagination:
+                        $ref: "#/components/schemas/Pagination"
+
+  /api/v1/loans:
+    post:
+      summary: Create a new loan (borrow book)
+      tags: [Loans]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - member_id
+                - book_id
+              properties:
+                member_id:
+                  type: integer
+                  example: 1
+                book_id:
+                  type: integer
+                  example: 2
+      responses:
+        201:
+          description: Loan created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Loan"
+        400:
+          description: Missing member_id or book_id
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Book:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        title:
+          type: string
+          example: The Great Gatsby
+        author:
+          type: string
+          example: F. Scott Fitzgerald
+        available:
+          type: boolean
+          example: true
+
+    NewBook:
+      type: object
+      required: [title, author]
+      properties:
+        title:
+          type: string
+          example: Atomic Habits
+        author:
+          type: string
+          example: James Clear
+
+    UpdateBook:
+      type: object
+      properties:
+        title:
+          type: string
+          example: New Title
+        author:
+          type: string
+          example: New Author
+        available:
+          type: boolean
+          example: false
+
+    Member:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: John Doe
+        email:
+          type: string
+          example: john@example.com
+        join_date:
+          type: string
+          example: 2025-10-15 14:30:00
+
+    Loan:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 5
+        member_id:
+          type: integer
+          example: 1
+        book_id:
+          type: integer
+          example: 2
+        borrow_date:
+          type: string
+          example: 2025-10-15 12:00:00
+        return_date:
+          type: string
+          nullable: true
+          example: null
+
+    Pagination:
+      type: object
+      properties:
+        total:
+          type: integer
+          example: 20
+        limit:
+          type: integer
+          example: 10
+        offset:
+          type: integer
+          example: 0
+        next_offset:
+          type: integer
+          nullable: true
+          example: 10
