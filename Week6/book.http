@@ -1,0 +1,56 @@
+### GET all books
+GET http://localhost:5001/api/v1/books
+Accept: application/json
+
+###
+
+### GET only available books
+GET http://localhost:5001/api/v1/books?available=true
+Accept: application/json
+
+###
+
+### GET single book
+GET http://localhost:5001/api/v1/books/2
+Accept: application/json
+
+###
+
+### CREATE new book
+POST http://localhost:5001/api/v1/books
+Accept: application/json
+Content-Type: application/json
+
+{
+  "title": "Flask for Beginners 2",
+  "author": "Cuong Dung"
+}
+
+###
+
+### UPDATE book 
+PUT http://localhost:5001/api/v1/books/2
+Accept: application/json
+Content-Type: application/json
+
+{
+  "title": "Flask Update",
+  "author": "Sinh vien UET",
+  "available": false
+}
+
+###
+
+### DELETE book
+DELETE http://localhost:5001/api/v1/books/1
+Accept: application/json
+
+### Borrow a book
+POST http://localhost:5001/api/v1/books/2/borrow
+Accept: application/json
+
+###
+
+### Return a book
+POST http://localhost:5001/api/v1/books/2/return
+Accept: application/json

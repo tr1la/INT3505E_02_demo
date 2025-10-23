@@ -1,0 +1,740 @@
+openapi: 3.0.3
+info:
+  title: Book Management API
+  description: API for managing books, members, and loans with JWT authentication and ETag support
+  version: 1.2.0
+
+servers:
+  - url: http://localhost:5001
+    description: Local development server
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/v1/login:
+    post:
+      summary: Login to obtain JWT token
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                  example: admin
+                password:
+                  type: string
+                  example: 123456
+      responses:
+        200:
+          description: Login successful, returns JWT token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      token:
+                        type: string
+                        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        401:
+          description: Invalid credentials
+
+  /api/v1/books:
+    get:
+      summary: Get all books with optional filtering and pagination
+      tags: [Books]
+      parameters:
+        - name: available
+          in: query
+          schema:
+            type: boolean
+          description: Filter books by availability
+        - name: title
+          in: query
+          schema:
+            type: string
+          description: Filter books by title
+        - name: author
+          in: query
+          schema:
+            type: string
+          description: Filter books by author
+        - name: limit
+          in: query
+          schema:
+            type: integer
+          description: Limit number of results
+        - name: offset
+          in: query
+          schema:
+            type: integer
+          description: Offset for pagination
+      responses:
+        200:
+          description: List of books retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      books:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Book"
+                      pagination:
+                        $ref: "#/components/schemas/Pagination"
+
+    post:
+      summary: Create a new book
+      tags: [Books]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewBook"
+      responses:
+        201:
+          description: Book created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Book"
+
+  /api/v1/books/{book_id}:
+    get:
+      summary: Get a book by ID
+      tags: [Books]
+      parameters:
+        - name: book_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: Book retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Book"
+        404:
+          description: Book not found
+
+    put:
+      summary: Update or borrow/return a book
+      tags: [Books]
+      parameters:
+        - name: book_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBook"
+      responses:
+        200:
+          description: Book updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Book"
+        400:
+          description: Invalid request
+
+    delete:
+      summary: Delete a book
+      tags: [Books]
+      parameters:
+        - name: book_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: Book deleted successfully
+        404:
+          description: Book not found
+
+  /api/v1/books/{book_id}/categories:
+    get:
+      tags:
+        - Books
+      summary: Lấy danh sách thể loại của một cuốn sách
+      description: Trả về danh sách tất cả các thể loại (Category) mà một cuốn sách thuộc về.
+      parameters:
+        - name: book_id
+          in: path
+          required: true
+          description: ID của sách cần lấy danh sách thể loại
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lấy danh sách thể loại thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponseCategories'
+        '401':
+          description: Unauthorized - Token không hợp lệ hoặc bị thiếu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Không tìm thấy sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/categories:
+    get:
+      tags:
+        - Categories
+      summary: Lấy danh sách các thể loại
+      parameters:
+        - name: loan_id
+          in: query
+          required: false
+          description: ID của lượt mượn để lọc thể loại của cuốn sách tương ứng
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lấy danh sách thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponseCategories'
+        '404':
+          description: Không tìm thấy sách với book_id đã cho
+        '401':
+          description: Unauthorized
+    post:
+      tags:
+        - Categories
+      summary: Tạo một thể loại mới
+      description: Thêm một thể loại sách mới vào hệ thống. Tên thể loại phải là duy nhất.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  example: "Fantasy"
+      responses:
+        '201':
+          description: Tạo thể loại thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponseCreateCategory'
+        '400':
+          description: Thiếu tên thể loại
+        '409':
+          description: Thể loại đã tồn tại
+        '401':
+          description: Unauthorized
+
+  /api/v1/categories/{category_id}/books:
+    get:
+      tags:
+        - Categories
+      summary: Lấy sách trong một thể loại
+      description: Trả về một danh sách tất cả các sách (Book) thuộc về một thể loại (Category) cụ thể.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: category_id
+          in: path
+          required: true
+          description: ID của thể loại cần lấy danh sách sách
+          schema:
+            type: integer
+        - name: cursor
+          in: query
+          required: false
+          description: ID của mục cuối cùng đã thấy. Bỏ trống cho trang đầu tiên.
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          required: false
+          description: Số lượng mục tối đa trên mỗi trang (mặc định là 10).
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Lấy danh sách sách thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponseCursorPaginatedBooks'
+        '401':
+          description: Unauthorized - Token không hợp lệ hoặc bị thiếu
+        '404':
+          description: Không tìm thấy thể loại
+
+  /api/v1/members:
+    get:
+      summary: Get members with optional name filter and pagination
+      tags: [Members]
+      parameters:
+        - name: name
+          in: query
+          schema:
+            type: string
+          description: Filter by member name
+        - name: limit
+          in: query
+          schema:
+            type: integer
+          description: Limit number of results
+        - name: offset
+          in: query
+          schema:
+            type: integer
+          description: Offset for pagination
+      responses:
+        200:
+          description: List of members retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      members:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Member"
+                      pagination:
+                        $ref: "#/components/schemas/Pagination"
+
+  /api/v1/members/{member_id}/loans:
+    get:
+      tags:
+        - Members
+      summary: Lấy danh sách mượn sách của một thành viên
+      description: Trả về một danh sách tất cả các phiếu mượn (Loan) của một thành viên dựa trên ID.
+      parameters:
+        - name: member_id
+          in: path
+          required: true
+          description: ID của thành viên cần lấy lịch sử mượn
+          schema:
+            type: integer
+        - name: page
+          in: query
+          required: false
+          description: Số trang cần lấy (mặc định là 1)
+          schema:
+            type: integer
+            default: 1   
+        - name: page_size
+          in: query
+          required: false
+          description: Số lượng mục trên mỗi trang (mặc định là 20)
+          schema:
+            type: integer
+            default: 20     
+      responses:
+        '200':
+          description: Lấy danh sách thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponsePaginatedLoans
+        '401':
+          description: Unauthorized - Token không hợp lệ hoặc bị thiếu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Không tìm thấy thành viên
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/loans:
+    post:
+      summary: Create a new loan (borrow book)
+      tags: [Loans]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - member_id
+                - book_id
+              properties:
+                member_id:
+                  type: integer
+                  example: 1
+                book_id:
+                  type: integer
+                  example: 2
+      responses:
+        201:
+          description: Loan created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Loan"
+        400:
+          description: Missing member_id or book_id
+
+  /api/v1/loans/{loan_id}/books:
+    get:
+      tags:
+        - Loans
+      summary: Lấy thông tin sách của một lượt mượn
+      description: Trả về đối tượng sách (Book) duy nhất được liên kết với một phiếu mượn (Loan) cụ thể.
+      parameters:
+        - name: loan_id
+          in: path
+          required: true
+          description: ID của phiếu mượn
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lấy thông tin sách thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponseBook'
+        '401':
+          description: Unauthorized - Token không hợp lệ hoặc bị thiếu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Không tìm thấy phiếu mượn hoặc sách liên quan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/statistic:
+    get:
+      tags:
+        - Library
+      summary: Lấy thống kê tổng quan của thư viện (Singleton Resource)
+      description: |
+        Trả về các số liệu thống kê chung cho toàn bộ thư viện. 
+        Đây là một ví dụ về Singleton Resource vì nó không có ID và chỉ đại diện cho một đối tượng duy nhất.
+      responses:
+        '200':
+          description: Lấy thống kê thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    type: object
+                    properties:
+                      total_books:
+                        type: integer
+                        example: 150
+                      total_members:
+                        type: integer
+                        example: 42
+                      borrowed_books:
+                        type: integer
+                        example: 25
+                      available_books:
+                        type: integer
+                        example: 125
+                  message:
+                    type: string
+                    example: "Library statistic fetched successfully"
+        '401':
+          description: Unauthorized - Token không hợp lệ hoặc bị thiếu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi máy chủ khi truy vấn dữ liệu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Book:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        title:
+          type: string
+          example: The Great Gatsby
+        author:
+          type: string
+          example: F. Scott Fitzgerald
+        available:
+          type: boolean
+          example: true
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+          description: Danh sách các thể loại mà sách này thuộc về.
+
+    Category:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: "Science Fiction"
+
+    NewBook:
+      type: object
+      required: [title, author]
+      properties:
+        title:
+          type: string
+          example: Atomic Habits
+        author:
+          type: string
+          example: James Clear
+
+    UpdateBook:
+      type: object
+      properties:
+        title:
+          type: string
+          example: New Title
+        author:
+          type: string
+          example: New Author
+        available:
+          type: boolean
+          example: false
+
+    Member:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: John Doe
+        email:
+          type: string
+          example: john@example.com
+        join_date:
+          type: string
+          example: 2025-10-15 14:30:00
+
+    Loan:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 5
+        member_id:
+          type: integer
+          example: 1
+        book_id:
+          type: integer
+          example: 2
+        borrow_date:
+          type: string
+          example: 2025-10-15 12:00:00
+        return_date:
+          type: string
+          nullable: true
+          example: null
+
+    Pagination:
+      type: object
+      properties:
+        total:
+          type: integer
+          example: 20
+        limit:
+          type: integer
+          example: 10
+        offset:
+          type: integer
+          example: 0
+        next_offset:
+          type: integer
+          nullable: true
+          example: 10
+
+    PaginationMeta:
+      type: object
+      description: Metadata cho kết quả phân trang
+      properties:
+        page:
+          type: integer
+          example: 1
+        page_size:
+          type: integer
+          example: 20
+        total_pages:
+          type: integer
+          example: 5
+        total_items:
+          type: integer
+          example: 48
+        has_next:
+          type: boolean
+          example: true
+        has_prev:
+          type: boolean
+          example: false
+
+    SuccessResponsePaginatedLoans:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        data:
+          type: object
+          properties:
+            loans:
+              type: array
+              items:
+                $ref: '#/components/schemas/Loan'
+            pagination:
+              $ref: '#/components/schemas/PaginationMeta'
+        message:
+          type: string
+          example: "Loans for member 12 fetched successfully"
+    
+    SuccessResponseBook:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/Book'
+        message:
+          type: string
+          example: "Book for the specified loan fetched successfully"
+
+    SuccessResponseCategories:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+        message:
+          type: string
+          example: "Categories for book fetched"
+
+    SuccessResponseCreateCategory:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/Category'
+        message:
+          type: string
+          example: "Category created"
+
+    CursorPaginationMeta:
+      type: object
+      description: Metadata cho kết quả cursor pagination
+      properties:
+        next_cursor:
+          type: integer
+          nullable: true
+          description: Cursor để lấy trang tiếp theo. Null nếu không có trang tiếp.
+          example: 15
+        count:
+          type: integer
+          description: Số lượng mục trong trang hiện tại.
+          example: 10
+
+    SuccessResponseCursorPaginatedBooks:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        data:
+          type: object
+          properties:
+            books:
+              type: array
+              items:
+                $ref: '#/components/schemas/Book'
+            pagination:
+              $ref: '#/components/schemas/CursorPaginationMeta'
+        message:
+          type: string
+          example: "Books in category 'Fantasy' fetched successfully"
+
+    ErrorResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: error
+        data:
+          type: object
+          nullable: true
+          example: null
+        message:
+          type: string
+          example: "Member not found"
