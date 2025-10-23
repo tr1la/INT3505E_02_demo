@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, make_response
+from flask import Flask, request, jsonify, make_response, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 import hashlib
@@ -6,7 +6,10 @@ import json
 import jwt
 import datetime
 from functools import wraps
+from werkzeug.security import generate_password_hash, check_password_hash
 from flask_swagger_ui import get_swaggerui_blueprint
+import os
+
 app = Flask(__name__)
 CORS(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root@localhost/soa_demo'
@@ -103,43 +106,67 @@ def error_response(message, status_code=400):
 # ------------------ AUTH ------------------
 
 # Decorator xác thực JWT
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = None
-        if 'Authorization' in request.headers:
-            parts = request.headers['Authorization'].split()
-            if len(parts) == 2 and parts[0] == 'Bearer':
-                token = parts[1]
-        if not token:
-            return error_response("Token is missing", 401)
-        try:
-            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
-            current_user = data['user']
-        except jwt.ExpiredSignatureError:
-            return error_response("Token expired", 401)
-        except jwt.InvalidTokenError:
-            return error_response("Invalid token", 401)
-        return f(current_user, *args, **kwargs)
-    return decorated
+def permission_required(required_scope):
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            token = None
+            if 'Authorization' in request.headers:
+                parts = request.headers['Authorization'].split()
+                if len(parts) == 2 and parts[0].lower() == 'bearer':
+                    token = parts[1]
+
+            if not token:
+                return error_response("Token is missing", 401)
+
+            try:
+                data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+                current_user_scopes = data.get('scopes', [])
+                if required_scope not in current_user_scopes:
+                    return error_response(f"Permission denied: requires '{required_scope}' scope", 403)
+                
+            except jwt.ExpiredSignatureError:
+                return error_response("Token has expired", 401)
+            except jwt.InvalidTokenError:
+                return error_response("Invalid token", 401)
+            
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
 
 @app.route('/api/v1/login', methods=['POST'])
 def login():
     body = request.get_json()
+    if not body or not body.get('username') or not body.get('password'):
+        return error_response("Username and password required", 400)
+
     username = body.get('username')
     password = body.get('password')
-    if username == 'admin' and password == '123456':  # Demo
+    
+    user = User.query.filter_by(username=username).first()
+
+    if user and user.check_password(password):
+        # Tổng hợp tất cả các scope từ các role của user
+        user_scopes = set()
+        user_roles = [role.name for role in user.roles]
+        for role in user.roles:
+            user_scopes.update(role.scopes.split())
+
         token = jwt.encode({
             'user': username,
-            'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=30)
+            'roles': user_roles,
+            'scopes': list(user_scopes),
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=60)
         }, app.config['SECRET_KEY'], algorithm="HS256")
+        
         return success_response({"token": token}, "Login successful")
+
     return error_response("Invalid credentials", 401)
 
 # ------------------ Book API ------------------
 
 @app.route('/api/v1/books', methods=['GET'])
-@token_required
+@permission_required('books:read')
 def get_books(current_user):
     available = request.args.get('available')
     title = request.args.get('title')
@@ -174,7 +201,7 @@ def get_books(current_user):
 
 
 @app.route('/api/v1/books/<int:book_id>', methods=['GET'])
-@token_required
+@permission_required('books:read')
 def get_book(current_user, book_id):
     book = db.session.get(Book, book_id)
     if not book:
@@ -189,7 +216,7 @@ def get_book(current_user, book_id):
     return success_response(book_data, etag=etag)
 
 @app.route('/api/v1/books', methods=['POST'])
-@token_required
+@permission_required('books:create')
 def create_book(current_user):
     data = request.get_json()
     if not data or not data.get('title') or not data.get('author'):
@@ -202,7 +229,7 @@ def create_book(current_user):
     return success_response(book_data, "Book created", 201, etag)
 
 @app.route('/api/v1/books/<int:book_id>', methods=['PUT'])
-@token_required
+@permission_required('books:update')
 def update_book(current_user, book_id):
     book = db.session.get(Book, book_id)
     if not book:
@@ -247,7 +274,7 @@ def update_book(current_user, book_id):
 
 
 @app.route('/api/v1/books/<int:book_id>', methods=['DELETE'])
-@token_required
+@permission_required('books:delete')
 def delete_book(current_user, book_id):
     book = db.session.get(Book, book_id)
     if not book:
@@ -257,7 +284,7 @@ def delete_book(current_user, book_id):
     return success_response(None, "Book deleted")
 
 @app.route('/api/v1/books/<int:book_id>/categories', methods=['GET'])
-@token_required
+@permission_required('books:read')
 def get_categories_for_book(current_user, book_id):
     """Lấy tất cả thể loại của một cuốn sách."""
     book = db.session.get(Book, book_id)
@@ -270,7 +297,7 @@ def get_categories_for_book(current_user, book_id):
 # ------------------ Category API ------------------
 
 @app.route('/api/v1/categories', methods=['POST'])
-@token_required
+@permission_required('categories:create')
 def create_category(current_user):
     """Tạo một thể loại sách mới."""
     data = request.get_json()
@@ -290,7 +317,7 @@ def create_category(current_user):
 
 
 @app.route('/api/v1/categories', methods=['GET'])
-@token_required
+@permission_required('categories:read')
 def get_categories(current_user):
     """
     Lấy danh sách các thể loại.
@@ -320,7 +347,7 @@ def get_categories(current_user):
     return success_response(category_list, message)
 
 @app.route('/api/v1/categories/<int:category_id>/books', methods=['GET'])
-@token_required
+@permission_required('categories:read')
 def get_books_in_category(current_user, category_id):
     """Lấy danh sách sách trong một thể loại, có hỗ trợ cursor-based pagination."""
     
@@ -371,7 +398,7 @@ def get_books_in_category(current_user, category_id):
 # ------------------ Member API ------------------
 
 @app.route('/api/v1/members', methods=['GET'])
-@token_required
+@permission_required('members:read')
 def get_members(current_user):
     name = request.args.get('name')
     limit = int(request.args.get('limit', 10))
@@ -394,7 +421,7 @@ def get_members(current_user):
     return success_response({"members": data, "pagination": pagination})
 
 @app.route('/api/v1/members/<int:member_id>/loans', methods=['GET'])
-@token_required
+@permission_required('members:read')
 def get_loans_for_member(current_user, member_id):
     """Lấy tất cả các lượt mượn của một thành viên cụ thể với pagination."""
     
@@ -438,7 +465,7 @@ def get_loans_for_member(current_user, member_id):
 # ------------------ Loan API ------------------
 
 @app.route('/api/v1/loans', methods=['POST'])
-@token_required
+@permission_required('loans:create')
 def create_loan(current_user):
     data = request.get_json()
     member_id = data.get('member_id')
@@ -459,7 +486,7 @@ def create_loan(current_user):
     return success_response(new_loan.to_dict(), "Loan created", 201)
 
 @app.route('/api/v1/loans/<int:loan_id>/books', methods=['GET'])
-@token_required
+@permission_required('loans:read')
 def get_book_for_loan(current_user, loan_id):
     """
     Lấy thông tin sách từ một lượt mượn cụ thể.
@@ -484,7 +511,7 @@ def get_book_for_loan(current_user, loan_id):
 # ------------------ Singleton Resource: Statistic ------------------
 
 @app.route('/api/v1/statistic', methods=['GET'])
-@token_required
+@permission_required('statistics:read')
 def get_library_statistic(current_user):
     """
     Lấy thông tin thống kê tổng quan của thư viện.
@@ -531,10 +558,40 @@ app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
 def static_files(filename):
     return send_from_directory(os.path.join(app.root_path, 'static'), filename)
 
-
 @app.route('/')
 def home():
     return 'Swagger UI available at /docs'
+
+def setup_initial_data():
+    """Tạo roles và user admin mặc định nếu chưa có."""
+    # Tạo roles
+    admin_role = Role.query.filter_by(name='admin').first()
+    if not admin_role:
+        admin_scopes = ' '.join([
+            'books:read', 'books:create', 'books:update', 'books:delete',
+            'categories:read', 'categories:create',
+            'members:read', 'members:create',
+            'loans:read', 'loans:create',
+            'statistics:read'
+        ])
+        admin_role = Role(name='admin', scopes=admin_scopes)
+        db.session.add(admin_role)
+
+    member_role = Role.query.filter_by(name='member').first()
+    if not member_role:
+        member_scopes = ' '.join(['books:read', 'categories:read'])
+        member_role = Role(name='member', scopes=member_scopes)
+        db.session.add(member_role)
+    
+    # Tạo user admin
+    admin_user = User.query.filter_by(username='admin').first()
+    if not admin_user:
+        admin_user = User(username='admin')
+        admin_user.set_password('supersecret')
+        admin_user.roles.append(admin_role)
+        db.session.add(admin_user)
+        
+    db.session.commit()
 
 # ------------------ Main ------------------
 
