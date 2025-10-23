@@ -12,6 +12,61 @@ security:
   - bearerAuth: []
 
 paths:
+  /oauth/token:
+    post:
+      summary: Obtain an OAuth 2.0 Access Token
+      description: |
+        Use this endpoint to exchange user credentials for an access token using the Resource Owner Password Credentials Grant (password grant type).
+        
+        **Content-Type must be `application/x-www-form-urlencoded`**.
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - grant_type
+                - username
+                - password
+                - client_id
+                - client_secret
+              properties:
+                grant_type:
+                  type: string
+                  description: The grant type must be `password`.
+                  example: "password"
+                username:
+                  type: string
+                  description: The user's username.
+                  example: "admin"
+                password:
+                  type: string
+                  description: The user's password.
+                  format: password
+                  example: "123456"
+                client_id:
+                  type: string
+                  description: The client ID of the application making the request.
+                  example: "my-web-app"
+                client_secret:
+                  type: string
+                  description: The client secret of the application.
+                  example: "super-secret-for-app"
+      responses:
+        '200':
+          description: Access token granted successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthTokenSuccess'
+        '400':
+          description: Bad Request - Invalid client, invalid grant, or invalid user credentials.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/v1/login:
     post:
       summary: Login to obtain JWT token
@@ -748,3 +803,21 @@ components:
         message:
           type: string
           example: "Member not found"
+   
+    OAuthTokenSuccess:
+      type: object
+      properties:
+        access_token:
+          type: string
+          example: "a_very_long_random_string_here"
+        token_type:
+          type: string
+          example: "Bearer"
+        expires_in:
+          type: integer
+          description: The lifetime in seconds of the access token.
+          example: 3600
+        scope:
+          type: string
+          description: A space-delimited list of scopes the token is valid for.
+          example: "books:read books:create statistics:read"

@@ -9,6 +9,19 @@ from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_swagger_ui import get_swaggerui_blueprint
 import os
+from authlib.integrations.flask_oauth2 import (
+    AuthorizationServer,
+    ResourceProtector,
+)
+from authlib.integrations.sqla_oauth2 import (
+    create_query_client_func,
+    create_save_token_func,
+    create_revocation_endpoint,
+)
+from authlib.oauth2.rfc6749.grants import (
+    ResourceOwnerPasswordCredentialsGrant,
+)
+from authlib.oauth2.rfc6750 import BearerTokenValidator
 
 app = Flask(__name__)
 CORS(app)
@@ -23,6 +36,95 @@ book_categories = db.Table('book_categories',
     db.Column('book_id', db.Integer, db.ForeignKey('book.id'), primary_key=True),
     db.Column('category_id', db.Integer, db.ForeignKey('category.id'), primary_key=True)
 )
+# Bảng trung gian cho quan hệ nhiều-nều giữa User và Role
+user_roles = db.Table('user_roles',
+    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
+    db.Column('role_id', db.Integer, db.ForeignKey('role.id'), primary_key=True)
+)
+
+class Role(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), unique=True, nullable=False)
+    # Lưu các scope dưới dạng một chuỗi, phân tách bằng dấu cách
+    scopes = db.Column(db.String(255), nullable=False)
+
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    roles = db.relationship('Role', secondary=user_roles, lazy='subquery',
+                            backref=db.backref('users', lazy=True))
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password, method='pbkdf2:sha256')
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+    def get_user_id(self):
+        return self.id
+
+    def get_allowed_scopes(self):
+        user_scopes = set()
+        for role in self.roles:
+            user_scopes.update(role.scopes.split())
+        return ' '.join(user_scopes)
+    
+class OAuth2Client(db.Model):
+    __tablename__ = 'oauth2_client'
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.String(48), index=True)
+    client_secret = db.Column(db.String(120), nullable=False)
+    client_name = db.Column(db.String(120))
+    client_uri = db.Column(db.String(2000))
+    grant_types = db.Column(db.String(500))
+    redirect_uris = db.Column(db.String(2000))
+    response_types = db.Column(db.String(500))
+    scope = db.Column(db.String(500))
+    token_endpoint_auth_method = db.Column(db.String(120))
+    
+    def get_client_id(self):
+        return self.client_id
+    
+    def check_client_secret(self, client_secret):
+        return self.client_secret == client_secret
+
+    def check_grant_type(self, grant_type):
+        return grant_type in self.grant_types.split()
+
+    def check_response_type(self, response_type):
+        return response_type in self.response_types.split()
+
+    def check_endpoint_auth_method(self, method, endpoint):
+        return method in self.token_endpoint_auth_method.split()
+
+    def check_scope(self, scope):
+        allowed = set(self.scope.split())
+        requested = set(scope.split())
+        return requested.issubset(allowed)
+        
+class OAuth2Token(db.Model):
+    __tablename__ = 'oauth2_token'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'))
+    user = db.relationship('User')
+    client_id = db.Column(db.String(48))
+    token_type = db.Column(db.String(40))
+    access_token = db.Column(db.String(255), unique=True, nullable=False)
+    refresh_token = db.Column(db.String(255), index=True)
+    scope = db.Column(db.String(500))
+    issued_at = db.Column(db.Integer, nullable=False, default=lambda: int(time.time()))
+    expires_in = db.Column(db.Integer, nullable=False, default=0)
+
+    def is_expired(self):
+        return self.issued_at + self.expires_in < time.time()
+
+    def get_scope(self):
+        return self.scope
+
+    def get_client_id(self):
+        return self.client_id
+    
 class Category(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), unique=True, nullable=False)
@@ -103,6 +205,51 @@ def error_response(message, status_code=400):
     response.headers["Content-Type"] = "application/json"
     return response
 
+# ------------------ Cấu hình OAuth 2.0 Server ------------------
+# THÊM MỚI
+query_client = create_query_client_func(db.session, OAuth2Client)
+save_token = create_save_token_func(db.session, OAuth2Token)
+server = AuthorizationServer(
+    app,
+    query_client=query_client,
+    save_token=save_token
+)
+require_oauth = ResourceProtector()
+
+# Định nghĩa quy trình xác thực (Grant Type)
+class MyPasswordGrant(ResourceOwnerPasswordCredentialsGrant):
+    def authenticate_user(self, username, password):
+        print(f"DEBUG: MyPasswordGrant is trying to authenticate user '{username}'...")
+        user = User.query.filter_by(username=username).first()
+        if user and user.check_password(password):
+            print(f"DEBUG: User '{username}' authenticated successfully.")
+            return user
+        print(f"DEBUG: Authentication failed for user '{username}'.")
+        return None
+class MyBearerTokenValidator(BearerTokenValidator):
+    def authenticate_token(self, token_string):
+        return OAuth2Token.query.filter_by(access_token=token_string).first()
+# Đăng ký Grant Type với server
+server.register_grant(MyPasswordGrant)
+
+
+
+# Định nghĩa cách Resource Server (API của bạn) xác thực token
+def bearer_token_validator(token_string):
+    token = OAuth2Token.query.filter_by(access_token=token_string).first()
+    if token and not token.is_expired():
+        return token
+
+require_oauth.register_token_validator(MyBearerTokenValidator())
+
+# ------------------ OAuth 2.0 Endpoint ------------------
+# THÊM MỚI
+@app.route('/oauth/token', methods=['POST'])
+def issue_token():
+    print("\nDEBUG: Received request to /oauth/token")
+    print(f"DEBUG: Form data: {request.form.to_dict()}")
+    return server.create_token_response()
+
 # ------------------ AUTH ------------------
 
 # Decorator xác thực JWT
@@ -167,7 +314,7 @@ def login():
 
 @app.route('/api/v1/books', methods=['GET'])
 @permission_required('books:read')
-def get_books(current_user):
+def get_books():
     available = request.args.get('available')
     title = request.args.get('title')
     author = request.args.get('author')
@@ -202,7 +349,7 @@ def get_books(current_user):
 
 @app.route('/api/v1/books/<int:book_id>', methods=['GET'])
 @permission_required('books:read')
-def get_book(current_user, book_id):
+def get_book(book_id):
     book = db.session.get(Book, book_id)
     if not book:
         return error_response("Book not found", 404)
@@ -217,7 +364,7 @@ def get_book(current_user, book_id):
 
 @app.route('/api/v1/books', methods=['POST'])
 @permission_required('books:create')
-def create_book(current_user):
+def create_book():
     data = request.get_json()
     if not data or not data.get('title') or not data.get('author'):
         return error_response("Missing title or author", 400)
@@ -230,7 +377,7 @@ def create_book(current_user):
 
 @app.route('/api/v1/books/<int:book_id>', methods=['PUT'])
 @permission_required('books:update')
-def update_book(current_user, book_id):
+def update_book(book_id):
     book = db.session.get(Book, book_id)
     if not book:
         return error_response("Book not found", 404)
@@ -275,7 +422,7 @@ def update_book(current_user, book_id):
 
 @app.route('/api/v1/books/<int:book_id>', methods=['DELETE'])
 @permission_required('books:delete')
-def delete_book(current_user, book_id):
+def delete_book(book_id):
     book = db.session.get(Book, book_id)
     if not book:
         return error_response("Book not found", 404)
@@ -285,7 +432,7 @@ def delete_book(current_user, book_id):
 
 @app.route('/api/v1/books/<int:book_id>/categories', methods=['GET'])
 @permission_required('books:read')
-def get_categories_for_book(current_user, book_id):
+def get_categories_for_book(book_id):
     """Lấy tất cả thể loại của một cuốn sách."""
     book = db.session.get(Book, book_id)
     if not book:
@@ -298,7 +445,7 @@ def get_categories_for_book(current_user, book_id):
 
 @app.route('/api/v1/categories', methods=['POST'])
 @permission_required('categories:create')
-def create_category(current_user):
+def create_category():
     """Tạo một thể loại sách mới."""
     data = request.get_json()
     if not data or not data.get('name'):
@@ -318,7 +465,7 @@ def create_category(current_user):
 
 @app.route('/api/v1/categories', methods=['GET'])
 @permission_required('categories:read')
-def get_categories(current_user):
+def get_categories():
     """
     Lấy danh sách các thể loại.
     Có thể lọc theo loan_id để lấy các thể loại của cuốn sách trong lượt mượn đó.
@@ -348,7 +495,7 @@ def get_categories(current_user):
 
 @app.route('/api/v1/categories/<int:category_id>/books', methods=['GET'])
 @permission_required('categories:read')
-def get_books_in_category(current_user, category_id):
+def get_books_in_category(category_id):
     """Lấy danh sách sách trong một thể loại, có hỗ trợ cursor-based pagination."""
     
     # Bước 1: Lấy tham số cursor và limit
@@ -399,7 +546,7 @@ def get_books_in_category(current_user, category_id):
 
 @app.route('/api/v1/members', methods=['GET'])
 @permission_required('members:read')
-def get_members(current_user):
+def get_members():
     name = request.args.get('name')
     limit = int(request.args.get('limit', 10))
     offset = int(request.args.get('offset', 0))
@@ -422,7 +569,7 @@ def get_members(current_user):
 
 @app.route('/api/v1/members/<int:member_id>/loans', methods=['GET'])
 @permission_required('members:read')
-def get_loans_for_member(current_user, member_id):
+def get_loans_for_member(member_id):
     """Lấy tất cả các lượt mượn của một thành viên cụ thể với pagination."""
     
     try:
@@ -466,7 +613,7 @@ def get_loans_for_member(current_user, member_id):
 
 @app.route('/api/v1/loans', methods=['POST'])
 @permission_required('loans:create')
-def create_loan(current_user):
+def create_loan():
     data = request.get_json()
     member_id = data.get('member_id')
     book_id = data.get('book_id')
@@ -487,7 +634,7 @@ def create_loan(current_user):
 
 @app.route('/api/v1/loans/<int:loan_id>/books', methods=['GET'])
 @permission_required('loans:read')
-def get_book_for_loan(current_user, loan_id):
+def get_book_for_loan(loan_id):
     """
     Lấy thông tin sách từ một lượt mượn cụ thể.
     Lưu ý: Endpoint này trả về một đối tượng Book duy nhất.
@@ -511,8 +658,8 @@ def get_book_for_loan(current_user, loan_id):
 # ------------------ Singleton Resource: Statistic ------------------
 
 @app.route('/api/v1/statistic', methods=['GET'])
-@permission_required('statistics:read')
-def get_library_statistic(current_user):
+@require_oauth('statistics:read')
+def get_library_statistic():
     """
     Lấy thông tin thống kê tổng quan của thư viện.
     Đây là một ví dụ về Singleton Resource vì chỉ có MỘT bộ thống kê
@@ -579,7 +726,7 @@ def setup_initial_data():
 
     member_role = Role.query.filter_by(name='member').first()
     if not member_role:
-        member_scopes = ' '.join(['books:read', 'categories:read'])
+        member_scopes = ' '.join(['books:read', 'categories:read', 'loans:read'])
         member_role = Role(name='member', scopes=member_scopes)
         db.session.add(member_role)
     
@@ -587,10 +734,30 @@ def setup_initial_data():
     admin_user = User.query.filter_by(username='admin').first()
     if not admin_user:
         admin_user = User(username='admin')
-        admin_user.set_password('supersecret')
+        admin_user.set_password('123456')
         admin_user.roles.append(admin_role)
         db.session.add(admin_user)
-        
+
+    # THÊM MỚI: Tạo một OAuth Client mẫu
+    client = OAuth2Client.query.filter_by(client_id='my-web-app').first()
+    if not client:
+        print("Creating default OAuth2 client...")
+        client = OAuth2Client(
+            client_id='my-web-app',
+            client_secret='super-secret-for-app',
+            client_name='My Web App',
+            grant_types='password',
+            response_types='token',
+            scope=' '.join([ # Các scope mà client này được phép yêu cầu
+                'books:read', 'books:create', 'books:update', 'books:delete',
+                'categories:read', 'categories:create',
+                'members:read',
+                'loans:read', 'loans:create',
+                'statistics:read'
+            ]),
+            token_endpoint_auth_method='client_secret_post client_secret_basic'
+        )
+        db.session.add(client) 
     db.session.commit()
 
 # ------------------ Main ------------------
@@ -598,4 +765,5 @@ def setup_initial_data():
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
+        setup_initial_data()
     app.run(debug=True, port=5001)
