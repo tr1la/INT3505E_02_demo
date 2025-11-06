@@ -1,0 +1,262 @@
+{
+	"info": {
+		"_postman_id": "47ddbb4c-d00f-491b-8c81-cf989fcff870",
+		"name": "Product API Test",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "49312025"
+	},
+	"item": [
+		{
+			"name": "New request",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"// 1. Kiểm tra Status Code là 201 Created",
+							"pm.test(\"Status code là 201 Created\", function () {",
+							"    pm.response.to.have.status(201);",
+							"});",
+							"",
+							"// 2. Kiểm tra response body có phải là JSON hợp lệ",
+							"pm.test(\"Response body là JSON\", function () {",
+							"    pm.response.to.be.json;",
+							"});",
+							"",
+							"// 3. Kiểm tra tên sản phẩm được trả về đúng như đã gửi",
+							"pm.test(\"Tên sản phẩm được tạo chính xác\", function () {",
+							"    var jsonData = pm.response.json();",
+							"    pm.expect(jsonData.name).to.include(\"Sản phẩm Test\");",
+							"});",
+							"",
+							"// 4. Lưu lại ID sản phẩm vừa tạo để dùng cho các request sau",
+							"var jsonData = pm.response.json();",
+							"if (jsonData.id) {",
+							"    pm.environment.set(\"newProductId\", jsonData.id);",
+							"    console.log(\"Đã lưu newProductId: \" + jsonData.id);",
+							"}"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"name\": \"Sản phẩm Test {{$randomInt}}\",\n    \"price\": 199.99,\n    \"description\": \"Mô tả sản phẩm test\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://127.0.0.1:8080/api/v1/products",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "8080",
+					"path": [
+						"api",
+						"v1",
+						"products"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "New request",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"// 1. Kiểm tra Status Code là 200 OK",
+							"pm.test(\"Status code là 200 OK\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"// 2. Kiểm tra ID trả về đúng là ID đã gọi",
+							"pm.test(\"ID sản phẩm trả về chính xác\", function () {",
+							"    var jsonData = pm.response.json();",
+							"    pm.expect(jsonData.id).to.eql(pm.environment.get(\"newProductId\"));",
+							"});"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://127.0.0.1:8080/api/v1/products/{{newProductId}}",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "8080",
+					"path": [
+						"api",
+						"v1",
+						"products",
+						"{{newProductId}}"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "New request",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"// 1. Kiểm tra Status Code là 200 OK",
+							"pm.test(\"Status code là 200 OK\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"// 2. Kiểm tra tên sản phẩm đã thực sự được cập nhật",
+							"pm.test(\"Tên sản phẩm đã được cập nhật\", function () {",
+							"    var jsonData = pm.response.json();",
+							"    pm.expect(jsonData.name).to.eql(\"Sản phẩm ĐÃ CẬP NHẬT\");",
+							"    pm.expect(jsonData.price).to.eql(299.99);",
+							"});"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"method": "PUT",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"name\": \"Sản phẩm ĐÃ CẬP NHẬT\",\n  \"price\": 299.99,\n  \"description\": \"Mô tả đã được cập nhật\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://127.0.0.1:8080/api/v1/products/{{newProductId}}",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "8080",
+					"path": [
+						"api",
+						"v1",
+						"products",
+						"{{newProductId}}"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "New request",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"// 1. Kiểm tra Status Code là 204 No Content",
+							"pm.test(\"Status code là 204 No Content\", function () {",
+							"    pm.response.to.have.status(204);",
+							"});"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"method": "DELETE",
+				"header": [],
+				"url": {
+					"raw": "http://127.0.0.1:8080/api/v1/products/{{newProductId}}",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "8080",
+					"path": [
+						"api",
+						"v1",
+						"products",
+						"{{newProductId}}"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "New request",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"// 1. Kiểm tra Status Code là 200 OK",
+							"pm.test(\"Status code là 200 OK\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"// 2. Kiểm tra body trả về là một mảng",
+							"pm.test(\"Body trả về là một mảng\", function () {",
+							"    pm.expect(pm.response.json()).to.be.an('array');",
+							"});"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://127.0.0.1:8080/api/v1/products",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "8080",
+					"path": [
+						"api",
+						"v1",
+						"products"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
