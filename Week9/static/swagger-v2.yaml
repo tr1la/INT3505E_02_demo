@@ -1,0 +1,511 @@
+openapi: 3.0.3
+info:
+  title: Book Management API - Query Parameter Versioning
+  description: |
+    API for managing books with JWT authentication and ETag support.
+
+    **Versioning Strategy: Query Parameter**
+    - Version is specified as a query parameter
+    - Example: `/api/books?version=1` or `/api/books?version=2`
+
+    **Advantages:**
+    - Simple to implement
+    - No URL structure changes
+    - Easy to test in browser
+    - Backward compatible
+
+    **Disadvantages:**
+    - Can clutter URLs with many parameters
+    - May affect caching strategies
+
+    **Usage Examples:**
+    ```
+    GET /api/books?version=1
+    GET /api/books?version=2&available=true
+    POST /api/books?version=2
+    ```
+
+    **Configuration:**
+    Set `API_VERSION_STRATEGY=query` in .env file
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:5001
+    description: Local development server
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Auth
+    description: Authentication endpoints
+  - name: Books
+    description: Book management endpoints (version specified via query parameter)
+
+paths:
+  # ==================== AUTH ====================
+  /api/login:
+    post:
+      summary: Login to obtain JWT token
+      tags: [Auth]
+      security: []
+      parameters:
+        - name: version
+          in: query
+          schema:
+            type: string
+            enum: ["1", "2"]
+            default: "1"
+          description: API version (optional, defaults to v1)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                  example: admin
+                password:
+                  type: string
+                  example: "123456"
+      responses:
+        200:
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+              example:
+                status: success
+                data:
+                  token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                message: "Login successful"
+        401:
+          $ref: "#/components/responses/UnauthorizedError"
+
+  # ==================== BOOKS ====================
+  /api/books:
+    get:
+      summary: Get all books
+      description: |
+        Retrieve all books with optional filters.
+
+        **Version differences:**
+        - `version=1`: Uses PyMongo for database queries
+        - `version=2`: Uses MongoEngine ODM for database queries
+
+        Both versions return the same response structure.
+      tags: [Books]
+      parameters:
+        - name: version
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["1", "2"]
+            default: "1"
+          description: |
+            API version to use:
+            - `1`: PyMongo implementation
+            - `2`: MongoEngine implementation
+          example: "1"
+        - name: available
+          in: query
+          schema:
+            type: boolean
+          description: Filter books by availability status
+          example: true
+        - name: title
+          in: query
+          schema:
+            type: string
+          description: Filter books by title (case-insensitive search)
+          example: "Atomic"
+        - name: author
+          in: query
+          schema:
+            type: string
+          description: Filter books by author (case-insensitive search)
+          example: "Clear"
+      responses:
+        200:
+          description: Books retrieved successfully
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Entity tag for cache validation
+            Cache-Control:
+              schema:
+                type: string
+              description: Cache control directives
+              example: "private, max-age=120"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BooksListResponse"
+              examples:
+                v1_response:
+                  summary: Version 1 response (PyMongo)
+                  value:
+                    status: success
+                    data:
+                      books:
+                        - _id: "507f1f77bcf86cd799439011"
+                          title: "Atomic Habits"
+                          author: "James Clear"
+                          available: true
+                    message: "Books fetched successfully (v1)"
+                v2_response:
+                  summary: Version 2 response (MongoEngine)
+                  value:
+                    status: success
+                    data:
+                      books:
+                        - _id: "507f1f77bcf86cd799439011"
+                          title: "Atomic Habits"
+                          author: "James Clear"
+                          available: true
+                    message: "Books fetched successfully (v2)"
+        401:
+          $ref: "#/components/responses/UnauthorizedError"
+
+    post:
+      summary: Create a new book
+      tags: [Books]
+      parameters:
+        - name: version
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["1", "2"]
+            default: "1"
+          description: API version (1=PyMongo, 2=MongoEngine)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewBook"
+            example:
+              title: "Python and MongoDB"
+              author: "John Doe"
+      responses:
+        201:
+          description: Book created successfully
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookResponse"
+              examples:
+                v1_created:
+                  summary: Book created with v1
+                  value:
+                    status: success
+                    data:
+                      _id: "507f1f77bcf86cd799439011"
+                      title: "Python and MongoDB"
+                      author: "John Doe"
+                      available: true
+                    message: "Book created (v1)"
+                v2_created:
+                  summary: Book created with v2
+                  value:
+                    status: success
+                    data:
+                      _id: "507f1f77bcf86cd799439011"
+                      title: "Python and MongoDB"
+                      author: "John Doe"
+                      available: true
+                    message: "Book created (v2)"
+        400:
+          $ref: "#/components/responses/BadRequestError"
+        401:
+          $ref: "#/components/responses/UnauthorizedError"
+
+  /api/books/{book_id}:
+    get:
+      summary: Get a book by ID
+      tags: [Books]
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - name: version
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["1", "2"]
+            default: "1"
+          description: API version
+        - name: If-None-Match
+          in: header
+          schema:
+            type: string
+          description: ETag value for conditional GET request
+      responses:
+        200:
+          description: Book retrieved successfully
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookResponse"
+        304:
+          description: Not Modified - ETag matched
+        404:
+          $ref: "#/components/responses/NotFoundError"
+        401:
+          $ref: "#/components/responses/UnauthorizedError"
+
+    put:
+      summary: Update a book
+      tags: [Books]
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - name: version
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["1", "2"]
+            default: "1"
+          description: API version
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBook"
+            example:
+              title: "Updated Title"
+              available: false
+      responses:
+        200:
+          description: Book updated successfully
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookResponse"
+        404:
+          $ref: "#/components/responses/NotFoundError"
+        401:
+          $ref: "#/components/responses/UnauthorizedError"
+
+    delete:
+      summary: Delete a book
+      tags: [Books]
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - name: version
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["1", "2"]
+            default: "1"
+          description: API version
+      responses:
+        200:
+          description: Book deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+              examples:
+                v1_deleted:
+                  value:
+                    status: success
+                    data: null
+                    message: "Book deleted (v1)"
+                v2_deleted:
+                  value:
+                    status: success
+                    data: null
+                    message: "Book deleted (v2)"
+        404:
+          $ref: "#/components/responses/NotFoundError"
+        401:
+          $ref: "#/components/responses/UnauthorizedError"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from /api/login endpoint
+
+  parameters:
+    BookId:
+      name: book_id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: MongoDB ObjectID of the book
+      example: "507f1f77bcf86cd799439011"
+
+  schemas:
+    Book:
+      type: object
+      properties:
+        _id:
+          type: string
+          example: "507f1f77bcf86cd799439011"
+        title:
+          type: string
+          example: "Atomic Habits"
+        author:
+          type: string
+          example: "James Clear"
+        available:
+          type: boolean
+          example: true
+
+    NewBook:
+      type: object
+      required:
+        - title
+        - author
+      properties:
+        title:
+          type: string
+          minLength: 1
+          example: "Python and MongoDB"
+        author:
+          type: string
+          minLength: 1
+          example: "John Doe"
+
+    UpdateBook:
+      type: object
+      properties:
+        title:
+          type: string
+          example: "Updated Title"
+        author:
+          type: string
+          example: "Updated Author"
+        available:
+          type: boolean
+          example: false
+
+    LoginResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        data:
+          type: object
+          properties:
+            token:
+              type: string
+              example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        message:
+          type: string
+          example: "Login successful"
+
+    BookResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        data:
+          $ref: "#/components/schemas/Book"
+        message:
+          type: string
+          example: "Book created (v1)"
+
+    BooksListResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        data:
+          type: object
+          properties:
+            books:
+              type: array
+              items:
+                $ref: "#/components/schemas/Book"
+        message:
+          type: string
+          example: "Books fetched successfully (v1)"
+
+    SuccessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        data:
+          nullable: true
+          example: null
+        message:
+          type: string
+          example: "Book deleted (v1)"
+
+    ErrorResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: error
+        data:
+          nullable: true
+          example: null
+        message:
+          type: string
+          example: "Error message"
+
+  responses:
+    UnauthorizedError:
+      description: Unauthorized - Invalid or missing token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            status: error
+            data: null
+            message: "Token is missing"
+
+    NotFoundError:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            status: error
+            data: null
+            message: "Book not found"
+
+    BadRequestError:
+      description: Bad request - Invalid input
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            status: error
+            data: null
+            message: "Missing title or author"

@@ -1,0 +1,417 @@
+openapi: 3.0.3
+info:
+  title: Book Management API - URI Path Versioning
+  description: |
+    API for managing books with JWT authentication and ETag support.
+
+    **Versioning Strategy: URI Path**
+    - Version is specified in the URL path
+    - v1: `/api/v1/books` (uses PyMongo)
+    - v2: `/api/v2/books` (uses MongoEngine)
+
+    **Advantages:**
+    - Clear and explicit versioning
+    - Easy to understand and implement
+    - Cache-friendly
+    - No special headers required
+
+    **Configuration:**
+    Set `API_VERSION_STRATEGY=uri` in .env file
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:5001
+    description: Local development server
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Auth
+    description: Authentication endpoints
+  - name: Books v1
+  - name: Books v2
+
+paths:
+  # ==================== AUTH ====================
+  /api/v1/login:
+    post:
+      summary: Login (v1)
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                  example: admin
+                password:
+                  type: string
+                  example: "123456"
+      responses:
+        200:
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        401:
+          $ref: "#/components/responses/UnauthorizedError"
+
+  /api/v2/login:
+    post:
+      summary: Login (v2)
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                  example: admin
+                password:
+                  type: string
+                  example: "123456"
+      responses:
+        200:
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        401:
+          $ref: "#/components/responses/UnauthorizedError"
+
+  # ==================== BOOKS V1 ====================
+  /api/v1/books:
+    get:
+      summary: Get all books (v1 - PyMongo)
+      tags: [Books v1]
+      parameters:
+        - name: available
+          in: query
+          schema:
+            type: boolean
+          description: Filter by availability
+        - name: title
+          in: query
+          schema:
+            type: string
+          description: Filter by title (regex)
+        - name: author
+          in: query
+          schema:
+            type: string
+          description: Filter by author (regex)
+      responses:
+        200:
+          description: Books retrieved successfully
+          headers:
+            ETag:
+              schema:
+                type: string
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BooksListResponse"
+
+    post:
+      summary: Create a new book (v1)
+      tags: [Books v1]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewBook"
+      responses:
+        201:
+          description: Book created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookResponse"
+
+  /api/v1/books/{book_id}:
+    get:
+      summary: Get book by ID (v1)
+      tags: [Books v1]
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - name: If-None-Match
+          in: header
+          schema:
+            type: string
+      responses:
+        200:
+          description: Book retrieved
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookResponse"
+        304:
+          description: Not Modified
+
+    put:
+      summary: Update book (v1)
+      tags: [Books v1]
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBook"
+      responses:
+        200:
+          description: Book updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookResponse"
+
+    delete:
+      summary: Delete book (v1)
+      tags: [Books v1]
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+      responses:
+        200:
+          description: Book deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  # ==================== BOOKS V2 ====================
+  /api/v2/books:
+    get:
+      summary: Get all books (v2 - MongoEngine)
+      tags: [Books v2]
+      parameters:
+        - name: available
+          in: query
+          schema:
+            type: boolean
+        - name: title
+          in: query
+          schema:
+            type: string
+        - name: author
+          in: query
+          schema:
+            type: string
+      responses:
+        200:
+          description: Books retrieved successfully
+          headers:
+            ETag:
+              schema:
+                type: string
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BooksListResponse"
+
+    post:
+      summary: Create a new book (v2)
+      tags: [Books v2]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewBook"
+      responses:
+        201:
+          description: Book created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookResponse"
+
+  /api/v2/books/{book_id}:
+    get:
+      summary: Get book by ID (v2)
+      tags: [Books v2]
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - name: If-None-Match
+          in: header
+          schema:
+            type: string
+      responses:
+        200:
+          description: Book retrieved
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookResponse"
+        304:
+          description: Not Modified
+
+    put:
+      summary: Update book (v2)
+      tags: [Books v2]
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBook"
+      responses:
+        200:
+          description: Book updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookResponse"
+
+    delete:
+      summary: Delete book (v2)
+      tags: [Books v2]
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+      responses:
+        200:
+          description: Book deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    BookId:
+      name: book_id
+      in: path
+      required: true
+      schema:
+        type: string
+      example: "507f1f77bcf86cd799439011"
+
+  schemas:
+    Book:
+      type: object
+      properties:
+        _id:
+          type: string
+        title:
+          type: string
+        author:
+          type: string
+        available:
+          type: boolean
+
+    NewBook:
+      type: object
+      required: [title, author]
+      properties:
+        title:
+          type: string
+        author:
+          type: string
+
+    UpdateBook:
+      type: object
+      properties:
+        title:
+          type: string
+        author:
+          type: string
+        available:
+          type: boolean
+
+    LoginResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        data:
+          type: object
+          properties:
+            token:
+              type: string
+        message:
+          type: string
+
+    BookResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        data:
+          $ref: "#/components/schemas/Book"
+        message:
+          type: string
+
+    BooksListResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        data:
+          type: object
+          properties:
+            books:
+              type: array
+              items:
+                $ref: "#/components/schemas/Book"
+        message:
+          type: string
+
+    SuccessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        data:
+          nullable: true
+        message:
+          type: string
+
+  responses:
+    UnauthorizedError:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+              message:
+                type: string
