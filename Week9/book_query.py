@@ -21,7 +21,7 @@ CORS(app)
 app.config['SECRET_KEY'] = os.getenv("SECRET_KEY", "defaultsecret")
 app.config['MONGO_URI'] = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 app.config['MONGO_DB_NAME'] = os.getenv("MONGO_DB_NAME", "soa_demo")
-app.config['API_VERSION_STRATEGY'] =  "header" # uri, query, header
+app.config['API_VERSION_STRATEGY'] =  "query" # uri, query, header
 
 # ------------------ MongoDB setup ------------------
 # PyMongo for v1
@@ -46,7 +46,7 @@ class Book(Document):
             "available": self.available,
             "year_published": self.year_published
         }
-        
+
 # ------------------ Helper functions ------------------
 def generate_etag(data_dict):
     data_str = json.dumps(data_dict, sort_keys=True, default=str)
@@ -91,7 +91,7 @@ def get_api_version():
     
     # Strategy 3: Custom header versioning
     elif strategy == 'header':
-        version = request.headers.get('api-version', '1')
+        version = request.headers.get('API-Version', '1')
         return version
     
     # Strategy 4: Content negotiation
@@ -408,14 +408,14 @@ def api_info():
         "usage_examples": {
             "uri": "GET /api/v1/books or /api/v2/books",
             "query": "GET /api/books?version=1 or version=2",
-            "header": "GET /api/books with header 'api-version: 1'",
+            "header": "GET /api/books with header 'API-Version: 1'",
             "content": "GET /api/books with header 'Accept: application/vnd.library.v1+json'"
         }
     }, "API information")
 
 # ------------------ Swagger ------------------
 SWAGGER_URL = '/docs'
-API_URL = '/static/swagger-v3.yaml'
+API_URL = '/static/swagger-v2.yaml'
 swaggerui_blueprint = get_swaggerui_blueprint(SWAGGER_URL, API_URL, config={'app_name': "Book Management API"})
 app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
 
