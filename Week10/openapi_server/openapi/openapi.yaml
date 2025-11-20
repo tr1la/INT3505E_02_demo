@@ -1,0 +1,220 @@
+openapi: 3.0.0
+info:
+  description: "API để quản lý Sản phẩm (Product), kết nối với MongoDB."
+  title: Product API
+  version: 1.0.0
+servers:
+- description: Server phát triển cục bộ
+  url: /api/v1
+paths:
+  /products:
+    get:
+      operationId: get_all_products
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/Product"
+                type: array
+          description: Một danh sách các sản phẩm
+      summary: Lấy danh sách tất cả sản phẩm
+      tags:
+      - Product
+      x-openapi-router-controller: openapi_server.controllers.product_controller
+    post:
+      operationId: create_product
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductInput"
+        description: Đối tượng Product cần được tạo
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+          description: Sản phẩm đã được tạo thành công
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Dữ liệu đầu vào không hợp lệ
+      summary: Tạo một sản phẩm mới
+      tags:
+      - Product
+      x-openapi-router-controller: openapi_server.controllers.product_controller
+  /products/{productId}:
+    delete:
+      operationId: delete_product
+      parameters:
+      - description: ID của sản phẩm (MongoDB ObjectID)
+        explode: false
+        in: path
+        name: productId
+        required: true
+        schema:
+          example: 605c7211f0a2d1001f2f3a6a
+          type: string
+        style: simple
+      responses:
+        "204":
+          description: Sản phẩm đã được xóa thành công
+        "404":
+          description: Không tìm thấy sản phẩm
+      summary: Xóa một sản phẩm
+      tags:
+      - Product
+      x-openapi-router-controller: openapi_server.controllers.product_controller
+    get:
+      operationId: get_product_by_id
+      parameters:
+      - description: ID của sản phẩm (MongoDB ObjectID)
+        explode: false
+        in: path
+        name: productId
+        required: true
+        schema:
+          example: 605c7211f0a2d1001f2f3a6a
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+          description: Thông tin chi tiết sản phẩm
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Không tìm thấy sản phẩm
+      summary: Lấy thông tin sản phẩm bằng ID
+      tags:
+      - Product
+      x-openapi-router-controller: openapi_server.controllers.product_controller
+    put:
+      operationId: update_product
+      parameters:
+      - description: ID của sản phẩm (MongoDB ObjectID)
+        explode: false
+        in: path
+        name: productId
+        required: true
+        schema:
+          example: 605c7211f0a2d1001f2f3a6a
+          type: string
+        style: simple
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductInput"
+        description: Đối tượng Product với thông tin cập nhật
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+          description: Sản phẩm đã được cập nhật
+        "400":
+          description: Dữ liệu đầu vào không hợp lệ
+        "404":
+          description: Không tìm thấy sản phẩm
+      summary: Cập nhật một sản phẩm đã có
+      tags:
+      - Product
+      x-openapi-router-controller: openapi_server.controllers.product_controller
+components:
+  schemas:
+    ProductInput:
+      example:
+        price: 1299.99
+        name: Laptop
+        description: Một chiếc laptop mạnh mẽ
+      properties:
+        name:
+          description: Tên của sản phẩm
+          example: Laptop
+          title: name
+          type: string
+        price:
+          description: Giá của sản phẩm
+          example: 1299.99
+          format: float
+          title: price
+          type: number
+        description:
+          description: Mô tả ngắn về sản phẩm
+          example: Một chiếc laptop mạnh mẽ
+          title: description
+          type: string
+      required:
+      - name
+      - price
+      title: ProductInput
+      type: object
+    Product:
+      example:
+        createdAt: 2000-01-23T04:56:07.000+00:00
+        price: 1299.99
+        name: Laptop
+        description: Một chiếc laptop mạnh mẽ
+        id: 605c7211f0a2d1001f2f3a6a
+      properties:
+        id:
+          description: ID duy nhất của sản phẩm (từ MongoDB)
+          example: 605c7211f0a2d1001f2f3a6a
+          title: id
+          type: string
+        name:
+          example: Laptop
+          title: name
+          type: string
+        price:
+          example: 1299.99
+          format: float
+          title: price
+          type: number
+        description:
+          example: Một chiếc laptop mạnh mẽ
+          title: description
+          type: string
+        createdAt:
+          description: Thời gian sản phẩm được tạo
+          format: date-time
+          title: createdAt
+          type: string
+      required:
+      - createdAt
+      - id
+      - name
+      - price
+      title: Product
+      type: object
+    Error:
+      example:
+        code: 0
+        message: message
+      properties:
+        message:
+          description: Mô tả chi tiết về lỗi
+          title: message
+          type: string
+        code:
+          description: Mã lỗi (tùy chọn)
+          title: code
+          type: integer
+      required:
+      - message
+      title: Error
+      type: object

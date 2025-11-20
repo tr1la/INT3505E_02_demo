@@ -1,0 +1,191 @@
+openapi: 3.0.0
+info:
+  title: "Product API"
+  description: "API để quản lý Sản phẩm (Product), kết nối với MongoDB."
+  version: "1.0.0"
+
+servers:
+  - url: "/api/v1"
+    description: "Server phát triển cục bộ"
+
+paths:
+  # 1. Định nghĩa cho collection /products
+  /products:
+    # POST: Tạo một Product mới
+    post:
+      tags:
+        - Product
+      summary: "Tạo một sản phẩm mới"
+      operationId: "createProduct" # Tên hàm mà generator sẽ tạo
+      requestBody:
+        description: "Đối tượng Product cần được tạo"
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductInput"
+      responses:
+        "201": # Created
+          description: "Sản phẩm đã được tạo thành công"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "400": # Bad Request
+          description: "Dữ liệu đầu vào không hợp lệ"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    # GET: Lấy tất cả Product
+    get:
+      tags:
+        - Product
+      summary: "Lấy danh sách tất cả sản phẩm"
+      operationId: "getAllProducts"
+      responses:
+        "200": # OK
+          description: "Một danh sách các sản phẩm"
+          content:
+            application/json:
+              schema:
+                type: "array"
+                items:
+                  $ref: "#/components/schemas/Product"
+
+  # 2. Định nghĩa cho một resource /products/{productId}
+  /products/{productId}:
+    # Tham số sẽ được áp dụng cho tất cả các method (GET, PUT, DELETE)
+    parameters:
+      - name: "productId"
+        in: "path"
+        description: "ID của sản phẩm (MongoDB ObjectID)"
+        required: true
+        schema:
+          type: "string"
+          example: "605c7211f0a2d1001f2f3a6a" # Ví dụ ID của Mongo
+
+    # GET: Lấy một Product bằng ID
+    get:
+      tags:
+        - Product
+      summary: "Lấy thông tin sản phẩm bằng ID"
+      operationId: "getProductById"
+      responses:
+        "200":
+          description: "Thông tin chi tiết sản phẩm"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "404":
+          description: "Không tìm thấy sản phẩm"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    # PUT: Cập nhật một Product bằng ID
+    put:
+      tags:
+        - Product
+      summary: "Cập nhật một sản phẩm đã có"
+      operationId: "updateProduct"
+      requestBody:
+        description: "Đối tượng Product với thông tin cập nhật"
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductInput"
+      responses:
+        "200":
+          description: "Sản phẩm đã được cập nhật"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "400":
+          description: "Dữ liệu đầu vào không hợp lệ"
+        "404":
+          description: "Không tìm thấy sản phẩm"
+
+    # DELETE: Xóa một Product bằng ID
+    delete:
+      tags:
+        - Product
+      summary: "Xóa một sản phẩm"
+      operationId: "deleteProduct"
+      responses:
+        "204": # No Content
+          description: "Sản phẩm đã được xóa thành công"
+        "404":
+          description: "Không tìm thấy sản phẩm"
+
+# --- Định nghĩa các Schema (Mô hình dữ liệu) ---
+components:
+  schemas:
+    # Schema cho dữ liệu ĐẦU VÀO (khi tạo hoặc cập nhật)
+    # Thường không bao gồm các trường read-only như id, createdAt
+    ProductInput:
+      type: "object"
+      properties:
+        name:
+          type: "string"
+          description: "Tên của sản phẩm"
+          example: "Laptop"
+        price:
+          type: "number"
+          format: "float"
+          description: "Giá của sản phẩm"
+          example: 1299.99
+        description:
+          type: "string"
+          description: "Mô tả ngắn về sản phẩm"
+          example: "Một chiếc laptop mạnh mẽ"
+      required:
+        - name
+        - price
+
+    # Schema cho dữ liệu ĐẦU RA (khi trả về từ API)
+    # Thường bao gồm các trường do server tạo ra (id, timestamps)
+    Product:
+      type: "object"
+      properties:
+        id:
+          type: "string"
+          description: "ID duy nhất của sản phẩm (từ MongoDB)"
+          example: "605c7211f0a2d1001f2f3a6a"
+        name:
+          type: "string"
+          example: "Laptop"
+        price:
+          type: "number"
+          format: "float"
+          example: 1299.99
+        description:
+          type: "string"
+          example: "Một chiếc laptop mạnh mẽ"
+        createdAt:
+          type: "string"
+          format: "date-time"
+          description: "Thời gian sản phẩm được tạo"
+      required:
+        - id
+        - name
+        - price
+        - createdAt
+        
+    # Schema chung cho các phản hồi lỗi
+    Error:
+      type: "object"
+      properties:
+        message:
+          type: "string"
+          description: "Mô tả chi tiết về lỗi"
+        code:
+          type: "integer"
+          description: "Mã lỗi (tùy chọn)"
+      required:
+        - message
